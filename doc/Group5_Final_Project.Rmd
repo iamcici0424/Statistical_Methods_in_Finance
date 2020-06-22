@@ -1,0 +1,1229 @@
+---
+title: "GR5261 Group 5 Final Project Report"
+author: "Chen Chen (cc4291), Yufan Zhang (yz3385), Qiwen Gao (qg2165)"
+date: "Due 12/17/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, warning=F}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, echo=F,message=F, warning=F}
+if(!require("moments")) install.packages("moments")
+if(!require("tseries")) install.packages("tseries")
+if(!require("Ecdat")) install.packages("Ecdat")
+if(!require("quadprog")) install.packages("quadprog")
+if(!require("ggplot2")) install.packages("ggplot2")
+if(!require("usdm")) install.packages("usdm")
+if(!require("fBasics")) install.packages("fBasics")
+if(!require("knitr")) install.packages("knitr")
+if(!require("kableExtra")) install.packages("kableExtra")
+if(!require("xts")) install.packages("xts")
+if(!require("forecast")) install.packages("forecast")
+if(!require("fma")) install.packages("fma")
+if(!require("expsmooth")) install.packages("expsmooth")
+if(!require("lmtest")) install.packages("lmtest")
+if(!require("tseries")) install.packages("tseries")
+if(!require("Quandl")) install.packages("Quandl")
+if(!require("fpp")) install.packages("fpp")
+if(!require("urca")) install.packages("urca")
+library(fitdistrplus)
+library(fGarch)
+library(reshape2)
+library("calibrate")
+library("factoextra")
+library("psych")
+library("GPArotation")
+library(FactoMineR)
+library("copula")
+library("grid")
+library(gridExtra)
+```
+
+```{r readdata,echo=F}
+# read the data
+MR.Returns<-read.csv("Monthly_Return.csv")
+CP<-read.csv("Close_Price.csv")
+rf<-read.csv("Risk_Free.csv")
+
+MR<-MR.Returns[,-1][,-16] # Monthly return
+risk.free.rate<-round((rf$rf)/12,4)  # rf rate
+SP500<-MR.Returns$SP500 # S&P 500
+```
+
+# Part I: Summary
+<!-- This section should be a brief summary of your main results using bullet points -->
+The goal of this project to do a series of analysis for 15 assets' 7-year monthly returns based on our learning in this class, and the results show that our assets are relatively stationable compared to the market, and more results could be found in the following sections.
+With the development of the times, the financial industry and the technology industry become more and more important fields. Finance and technology are the rising industries. In order to find out some financial statistical characters of financial and technology industries, we select top 15 market cap companies in those two industries as research objects. After obtaining returns of 15 assets and risk-free rate, we calculate their statistics, construct portfolios, implement asset allocation, analyze principal components, manage risks, and finally find an appropriate joint distribution for returns.
+
+# Part II: Data Description
+
+We select 15 stocks from different companies among Financial Industry and Technology Industry (**Appendix: Table 1**). There are 6 from Financial Industry, which are JPM, V, BAC, MA, WFC, and HSBC. The other 9 companies are from Technology, which are MSFT, GOOGL,FB,AAPL, AMZN,IBM,ORCL, ADBE, and VZ. We collect their monthly close price from Nov. 2012 to Nov.2019 in Yahoo Finance, and then compute their monthly return. We also find the close price for S&P 500 as a market index indicator. For the risk-free rate, we decide to use 3-month treasury bill monthly rate from FRED website. In the further calculation, we take average of T-bill rate from Nov. 2012 to Nov.2019, and use as the risk-free rate.
+
+# Part III: Descriptive Statistics
+
+In this part, we discuss the sample statistics of our assets using different descriptive methods. We use 15 assets and we look at 7 years of monthly closing prices and returns.
+
+## Sample Statistics 
+
+```{r,echo=F}
+# Means
+avg<-round(apply(MR, 2, mean),4) 
+# Standard deviations
+sd<-round(apply(MR, 2, sd),4) 
+# Skewness Coefficients
+S<-round(apply(MR, 2, skewness),4) 
+# Kurtosis Coefficients
+K<-round(apply(MR, 2, kurtosis),4) 
+# Beta
+beta<-c()
+for(i in 1:15){
+  beta[i]<-cov(MR[,i],SP500)/var(SP500)
+}
+beta<-round(beta,4)
+
+# Sharpe’s slope
+sharpe.ratio<-c()
+for (i in 1:15){
+  sharpe.ratio<-c(sharpe.ratio,sharpe(MR[,i],r=risk.free.rate[i]))
+  } 
+sharpe.ratio<-round(sharpe.ratio,4)
+
+# Annualnumbers
+annual.avg<-round(avg*12,4)
+annual.sd<-round(sd*sqrt(12),4)
+```
+
+The summarized table of sample statistics is in **Appendix: Table 2**. The mean of 15 assets returns are generally around 1.538%, and the standard deviation of 15 assets are generally around 0.06117. Skewness and Kurtosis indicates the shape of our data here. Among 15 assets, V, BAC, HSBC, MSFT, GOOGL,FB, AMZN, ORCL and ADBE has positive skewness, which means that the data are positively skewed or skewed right. JPM, MA, WFC, AAPL, IBM and VZ are negatively skewed or skewed left. The $\beta_i$ of V, HSBC, GOOGL, and VZ are larger than 1, so they are aggressive assets, and the $\beta_i$ of the left assets are smaller than 1, so they are non-aggressive assets. AAPL has the highest sharpe ratio/slope, which is 0.2967. Annual numbers indicates the return per year, and they will provide us with an overall idea of the performance of each asset based on a year standard.
+
+## Monthly Prices and Returns 
+
+The monthly closing prices plots could be seen  in **Appendix: Figure 1**, and we can see from the graph that all 15 assets are below the monthly closing price for S&P500. Most of 15 assets are relatively flat compared to the others, while there are two unusually large assets: AMZN and GOOGL. They are generally increasing within the time period and have good monthly closing price compared to the other assets. IBM is slightly larger at the beginning months of our research time period, while it drops a little bit after the times. Most of the monthly closing prices for our assets are within the range from 0 to $\$350$.
+
+The monthly return plots can be found in **Appendix: Figure 2**. It can be seen that each asset is pretty similar to the pattern change of S&P500. The fluctuation of these assets are relatively stationary over the time, and the average fluctuation of them are around the means. There are also some extremely fluctuations as well, such as FB. There is one time that FB has a large level of monthly returns over the time. We will discuss these unusual situations in the following parts.
+
+## Outlier Check
+
+We did outlier check procedure to technically find the usually large or small returns. The table in **Appendix: Table 3** shows the extreme values of each asset. The positive values indicates the unusually large returns, and negative values indicates the unusually small returns. We take FB as an example, there is an extreme large return at the 2013/7/1, and we did the research about the possible reasons behind this change. The launch of Facebook Pay helped spark a rise in FB stock above a cup-with-handle buy point. Among the big-cap winners of the decade, FB stock soared almost 600% from July 2013 to July 2018.
+
+```{r, echo=F}
+for (i in 1:15) {
+outlier<-boxplot.stats(MR[,i])$out
+}
+SP500.outlier<-boxplot.stats(SP500)$out
+```
+
+## Equity Curve
+
+We calculated the equity curve for all 15 assets as well as SP500  and plot it in **Appendix: Figure 3**. It is the growth of a \$1 in each of the asset over the time period from 2012 to 2019. From this graph, we can see the change of the assets over time. There are about 10 assets which are above the curve of SP500. These 10 assets (ordered from the smallest price to the largest price) include: AAPL, JPM, BAC, GOOGL, V, MSFT, MA, FB, AMZN, ADBE. Among those which are above SP500, there are three extremely large assets: FB, ADBE, AMZN.
+
+## Histograms, Boxplots and QQ-plots
+
+Based on histograms in **Appendix: Figure 4**, Most assets look normal distributed, and we need to fit the distributions later to see whether there is some other situations.
+
+The boxplots (**Appendix: Figure 5**) shows the most of our 15 assets have positive means.  FB has some large outliers that we explained the reasons before.
+
+The Q-Q plots of all the assets are shown in **Appendix: Figure 6**. Those lines are pretty close to linear if we ignore the outliers. As such, it is reasonable to see that all 15 assets are normally distributed. VZ, GOOGL, FB are most likely to be non-linear assets compared to the other assets. 
+
+## Test for Stationarity
+
+We use Augmented Dickey-Fuller (ADF) t-test to test for stationarity. Our null hypothesis is that the returns of asset i is not stationary. Then we computed the 15 tests for each asset and recorded their p-values, which could be seen below. Small p-values indicate that the return is stationary.
+
+Based on the results of our tests (**Appendix Table 4**), all the 15 assets are stationary as they have small p-values at the significant level at 0.05.
+
+## Fit Distributions
+
+```{r t, echo=F}
+AIC_t<-c()
+BIC_t<-c()
+n = length(MR)
+
+for (i in 1:15){
+  start = c(mean(MR[,i]), sd(MR[,i]), 5)
+  loglik_t = function(beta) {sum( - dt((MR[,i] - beta[1]) / beta[2], beta[3], log = TRUE) + log(beta[2]))}
+  fit_t = optim(start, loglik_t, hessian = T, method = "L-BFGS-B",
+              lower = c(-1, 0.001, 1))
+  AIC_t = c(AIC_t,2 * fit_t$value + 2 * 3)
+  BIC_t = c(BIC_t,2 * fit_t$value + log(n) * 3)
+}
+```
+
+```{r standard.t, echo=F}
+AIC_standard.t<-c()
+BIC_standard.t<-c()
+
+n = length(MR)
+
+for (i in 1:15){
+  start = c(mean(MR[,i]), sd(MR[,i]), 5)
+  loglik_std = function(beta) {sum( - dstd((MR[,i] - beta[1]) / beta[2], beta[3], log = TRUE) 
+                                    + log(beta[2]))}
+  fit_std = optim(start, loglik_std, hessian = T, method = "L-BFGS-B",
+              lower = c(-1, 0.001, 1))
+  AIC_standard.t = c(AIC_standard.t,2 * fit_std$value + 2 * 3)
+  BIC_standard.t = c(BIC_standard.t,2 * fit_std$value + log(n) * 3)
+}
+```
+
+```{r F.S.skewed.t, echo=F}
+AIC_sstd<-c()
+BIC_sstd<-c()
+n = length(MR)
+
+for (i in 1:15){
+  start = c(mean(MR[,i]), sd(MR[,i]), 5)
+  loglik_sstd = function(beta) {sum( - dsstd((MR[,i] - beta[1]) / beta[2], beta[3], log = TRUE) + log(beta[2]))}
+  fit_sstd = optim(start, loglik_sstd, hessian = T, method = "L-BFGS-B",
+              lower = c(-1, 0.001, 1))
+  AIC_sstd = c(AIC_sstd,2 * fit_sstd$value + 2 * 3)
+  BIC_sstd = c(BIC_sstd,2 * fit_sstd$value + log(n) * 3)
+}
+```
+
+```{r norm, echo=F, message=F,warning=F, error=F}
+AIC_n<-c(); BIC_n<-c()
+
+for (i in 1:15){
+  fit_n<-fitdist(MR[,i],"norm")
+  AIC_n<-c(AIC_n,fit_n$aic)
+  BIC_n<-c(BIC_n,fit_n$bic)
+}
+```
+
+Based on the table (**Appendix: Table 5**), most of our assets are normally distributed and t-distributed. There is only one asset is Skewed t distribution, which is FB.
+
+## Pairwise Scatter Plots
+
+As the scatter plots (**Appendix: Table 6 and Figure 7**) are hard to tell the relationships among 15 assets, we create the correlation table to compute the relationships. From the table, we can see that almost all the 15 assets are positive associated except for two negative associations, which are VZ v.s. BAC and VZ v.s. FB. The reason behind this is probability that VZ is a communication company which has less relationship with banks and technology companies. Furthermore, compared to all the other assets, VZ has a relatively small relationships to them, which are around the range from 0.009 to 0.285. As such, VZ is likely to be a special company among the 15 companies we selected.
+
+## Sample Covariance Matrix
+
+We build the covariance matrix in **Appendix: Table 7**. All the covariance among 15 assets are positive, and there are generally small covariance. There is one company we need to pay more attention on that VZ is special here as its covariance is almost close to 0.
+
+# Part IV: Data Analysis
+In this section, we summarized the results of your statistical analysis by topics in the following:
+
+## Portfolio Theory
+
+In this Portfolio Theory part, we construct minimum variance portfolio portfolio(MVP) and tangency portfolio for our assets data in two scenarios: with and without allowed short sales.       
+
+Under each circumstance, we first  estimate the portfolio mean, standard deviation, expected shortfalls for the  MVP. Then we compare the estimated return and risk of our generated portfolio with each singular data asset to see the performance of the MVP portfolio. Then we assume a $100,000 investment for the MVP portfolio over one month investment horizon. We calculate the 5% value-at-risk and make comparisons with the VaR of the individual assets. By using the computed estimations of the portfolio mean, variance  and covariances, we compute the efficient portfolio frontier with the Markowitz method. For the constructed tangency portfolio, we calculate its expected return, variance and standard deviation as well. In addition to that, we compute the Sharpe ratio, and compare the Sharpe ratio with the individual assets. 
+
+#### Allow Short Sales
+
+We start with the case when short sales are allowed, which means the investor sales the asset that he/she does not owned, then repurchases the asset and returns it to the lender. In this case, weights for some assets in the portfolio can be negative. Appendix graph: Efficient portfolio Frontier when short sales allowed graph
+
+* Minimum Variance Portfolio (MVP)
+
+```{r, echo=F}
+mean_vect<-colMeans(MR)
+cov_mat<-cov(MR)
+sd_vect<-sqrt(diag(cov_mat))
+
+mat<-cbind(rep(1,15),mean_vect)
+mup<-seq(min(mean_vect)+0.0001,max(mean_vect)-0.0001,length=300)
+sdp<-mup
+weights<-matrix(0,nrow=300,ncol=15)
+```
+
+```{r, echo=F}
+for (i in 1:length(mup)){
+  bvec<-c(1,mup[i])
+  result<-solve.QP(Dmat=cov_mat,dvec=rep(0,15),Amat=mat,bvec=bvec,meq=2)
+  sdp[i]<-sqrt(result$value)
+  weights[i,]<-result$solution
+}
+
+mufree<-mean(risk.free.rate)
+annulized_rf<-mufree*12
+
+# Tangent weight
+sharpe<-(mup-mufree)/sdp
+ind<-(sharpe==max(sharpe))
+options(digits=3)
+tangent_weight<-weights[ind,]
+
+
+# MVP weight
+ind2<-(sdp==min(sdp))
+ind3<-(mup>mup[ind2])
+MVP_weight<-weights[ind2,]
+```
+
+```{r mvp.t1, echo=F}
+mvp.t1<-names(MR)
+mvp.t1<-as.data.frame(rbind(mvp.t1,round(MVP_weight,4)))
+colnames(mvp.t1)<-NULL
+kable(mvp.t1, "latex", booktabs = T, row.names = F) %>%
+kable_styling(latex_options = c("striped","hold_position","scale_down"))
+```
+
+```{r mvp.t2, echo=F}
+mvp.t2<-as.data.frame(t(data.frame(c('MVP mean', 0.0774),c('MVP sd',0.0977), 
+                                   c('VaR',3994 ),c('Expected shortfall', 5172 ),
+                                   c('Sharpe ratio',0.716))), row.names = F,col.names = F)
+colnames(mvp.t2)<-NULL
+kable(mvp.t2, "latex", booktabs = T, row.names = F) %>%
+kable_styling(latex_options = c("striped","hold_position"),position="float_right")
+```
+
+From the MVP weights, we can see that 4 assets (BAC, MA,MSFT,AMZN) should be shorted. The assets with relatively low standard deviation take higher weights, while ones with the higher standard deviation either take smaller weights or are shorted. The mean of the MVP is 0.0774, standard deviation is 0.0977, 5% VaR is 3994, expected shortfall is 5172 and Sharpe ratio is 0.716.  Comparing with the 15 assets, although the mean value of MVP is not the highest, the Sharpe ratio of MVP is the highest. Here the MVP has the lowest standard deviation, lowest VaR and lowest expected shortfall. We can see that the portfolio diversifies the overall risk. 
+
+* Tangency Portfolio
+
+```{r t.t1, echo=F}
+t.t1<-names(MR)
+t.t1<-as.data.frame(rbind(t.t1,round(tangent_weight,4)))
+colnames(t.t1)<-NULL
+
+kable(t.t1, "latex", booktabs = T, row.names = F) %>%
+kable_styling(latex_options = c("striped","hold_position","scale_down"))
+```
+
+
+```{r, echo=F}
+# MVP
+I<-100000
+mean_MPV<-MVP_weight %*% mean_vect
+MVP_mean_ann<-mean_MPV*12;
+
+sd_MPV<-sqrt(MVP_weight %*% cov_mat %*% MVP_weight)
+MVP_sd_ann<-sd_MPV*sqrt(12)
+# sd_MPV<-sqrt(t(as.matrix(MVP_weight))%*%cov_mat%*%as.matrix(MVP_weight))
+```
+
+
+```{r, echo=F}
+MVP_data<-rowSums(as.matrix(MR)%*%diag(MVP_weight))
+nonpara_VaR_MVP<--quantile(MVP_data,0.05)*I
+nonpara_ES_MVP<--sum(MVP_data*(MVP_data<quantile(MVP_data,0.05)))/sum(MVP_data<quantile(MVP_data,0.05))*I
+#nonparametric
+
+normal_VaR_MVP<--I*(mean(MVP_data)+qnorm(0.05)*sd(MVP_data)) #normal
+normal_ES_MVP<-I*(-mean(MVP_data)+sd(MVP_data)*dnorm(qnorm(0.05))/0.05) #normal
+
+# Sharpe Ratio
+MVP_data<-rowSums(as.matrix(MR)%*%diag(MVP_weight))
+sr_MVP<-(mean(MVP_data)*12-annulized_rf)/(sd(MVP_data)*sqrt(12))
+
+# MVP_data<-sweep(as.matrix(MR),2,MPV_weight,'*')
+
+# Tangent
+# tangent_weight
+# round(tangent_weight*100,2)
+
+mean_tangent<-tangent_weight%*%mean_vect
+mean_tangent_ann<-mean_tangent*12
+
+sd_tangent<-sqrt(t(as.matrix(tangent_weight))%*%cov_mat%*%as.matrix(tangent_weight))
+sd_tangent_ann<-sd_tangent*sqrt(12)
+
+#var_tangent<-sd_tangent^2
+#A_sd_tangent<-var_tangent*12
+
+tangent_data<-rowSums(as.matrix(MR)%*%diag(tangent_weight))
+nonpara_VaR_tangent<--quantile(tangent_data,0.05)*I
+nonpara_ES_tangent<--sum(tangent_data*(tangent_data<quantile(tangent_data,0.05)))/
+  sum(tangent_data<quantile(tangent_data,0.05))*I
+
+normal_VaR_tangent<--I*(mean(tangent_data)+qnorm(0.05)*sd(tangent_data))
+normal_ES_tangent<-I*(-mean(tangent_data)+sd(tangent_data)*dnorm(qnorm(0.05))/0.05)
+
+# sharpe ratio
+tangent_data<-rowSums(as.matrix(MR)%*%diag(tangent_weight))
+sr_tangent<-(mean(tangent_data)*12-annulized_rf)/(sd(tangent_data)*sqrt(12))
+```
+
+```{r t.t2, echo=F}
+t.t2<-as.data.frame(t(data.frame(c('Tangency mean', 0.336),
+             c('Tangency  sd',0.144), c('VaR',4043 ),c('Expected shortfall', 5781 ),c('Sharpe ratio',2.28))), row.names = F,col.names = F)
+colnames(t.t2)<-NULL
+kable(t.t2, "latex", booktabs = T, row.names = F) %>%
+kable_styling(latex_options = c("striped","hold_position"),position="float_right")
+```
+
+The mean of the Tangency portfolio is 0.336, standard deviation is 0.144, 5% VaR is 4043, expected shortfall is 5781 and Sharpe ratio is 2.28. Among the 15 assets, AAPL has the highest Sharpe ratio, which equals 0.2967. Comparing with the 15 assets, the Sharpe ratio of the tangency portfolio is much higher. The tangency portfolio also has the lowest VaR and lowest expected shortfall, comparing  with the 15 individual assets. 
+
+#### Short sale not allowed
+
+The weights of the assets in the portfolio can’t be negative when short sales are not allowed, Appendix graph: Efficient portfolio Frontier when short sales not allowed graph
+
+* Minimum Variance Portfolio (MVP)
+
+```{r, echo=F}
+mean_vect<-colMeans(MR)
+cov_mat<-cov(MR)
+sd_vect<-sqrt(diag(cov_mat))
+
+mat_ns<-cbind(rep(1,15),mean_vect,diag(1,nrow=15))
+mup_ns<-seq(min(mean_vect)+0.0001,max(mean_vect)-0.0001,length=300)
+sdp_ns<-mup_ns
+weights_ns<-matrix(0,nrow=300,ncol=15)
+
+for (i in 1:length(mup_ns)){
+  bvec_ns<-c(1,mup_ns[i],rep(0.000000000001,15))
+  result_ns<-solve.QP(Dmat=cov_mat,dvec=rep(0,15),Amat=mat_ns,bvec=bvec_ns,meq=2)
+  sdp_ns[i]<-sqrt(result_ns$value)
+  weights_ns[i,]<-result_ns$solution
+}
+
+
+# Tangent weight
+sharpe_ns<-(mup_ns-mufree)/sdp_ns
+ind_ns<-(sharpe_ns==max(sharpe_ns))
+options(digits=3)
+tangent_weight_ns<-weights_ns[ind_ns,]
+
+# MVP weight
+ind2_ns<-(sdp_ns==min(sdp_ns))
+ind3_ns<-(mup_ns>mup_ns[ind2_ns])
+MVP_weight_ns<-weights_ns[ind2_ns,]
+
+
+# MVP_ns
+# MVP_weight_ns
+# round(MVP_weight_ns*100,2)
+
+mean_MPV_ns<-MVP_weight_ns%*%mean_vect
+MVP_mean_ann_ns<-mean_MPV_ns*12
+
+sd_MPV_ns<-sqrt(MVP_weight_ns%*%cov_mat%*%MVP_weight_ns)
+sd_MPV_ns_ann<-sd_MPV_ns*sqrt(12)
+# sd_MPV<-sqrt(t(as.matrix(MVP_weight))%*%cov_mat%*%as.matrix(MVP_weight))
+
+MVP_data_ns<-rowSums(as.matrix(MR)%*%diag(MVP_weight_ns))
+nonpara_VaR_MVP_ns<--quantile(MVP_data_ns,0.05)*I
+nonpara_ES_MVP_ns<--sum(MVP_data_ns*(MVP_data_ns<quantile(MVP_data_ns,0.05)))/sum(MVP_data_ns<quantile(MVP_data_ns,0.05))*I
+
+normal_VaR_MVP_ns<--I*(mean(MVP_data_ns)+qnorm(0.05)*sd(MVP_data_ns))
+normal_ES_MVP_ns<-I*(-mean(MVP_data_ns)+sd(MVP_data_ns)*dnorm(qnorm(0.05))/0.05)
+
+
+# Sharpe Ratio
+MVP_data_ns<-rowSums(as.matrix(MR)%*%diag(MVP_weight_ns))
+sr_MVP_ns<-(mean(MVP_data_ns)*12-annulized_rf)/(sd(MVP_data_ns)*sqrt(12))
+
+# MVP_data<-sweep(as.matrix(MR),2,MPV_weight,'*')
+
+# Tangent_no
+# tangent_weight_ns
+# round(tangent_weight_ns*100,3)
+
+mean_tangent_ns<-tangent_weight_ns%*%mean_vect
+mean_tangent_ns_ann<-mean_tangent_ns*12
+
+sd_tangent_ns<-sqrt(t(as.matrix(tangent_weight_ns))%*%cov_mat%*%as.matrix(tangent_weight_ns))
+sd_tangent_ns_ann<-sd_tangent_ns*sqrt(12)
+
+
+tangent_data_ns<-rowSums(as.matrix(MR)%*%diag(tangent_weight_ns))
+nonpara_VaR_tangent_ns<--quantile(tangent_data_ns,0.05)*I
+nonpara_ES_tangent_ns<--sum(tangent_data_ns*(tangent_data_ns<quantile(tangent_data_ns,0.05)))/sum(tangent_data_ns<quantile(tangent_data_ns,0.05))*I
+
+normal_VaR_tangent_ns<--I*(mean(tangent_data_ns)+qnorm(0.05)*sd(tangent_data_ns))
+normal_ES_tangent_ns<-I*(-mean(tangent_data_ns)+sd(tangent_data_ns)*dnorm(qnorm(0.05))/0.05)
+
+
+# Sharpe ratio
+tangent_data_ns<-rowSums(as.matrix(MR)%*%diag(tangent_weight_ns))
+sr_tangent_ns<-(mean(tangent_data_ns)*12-annulized_rf)/(sd(tangent_data_ns)*sqrt(12))
+```
+
+```{r mvp.2.t1,echo=F}
+mvp.2.t1<-names(MR)
+mvp.2.t1<-as.data.frame(rbind(mvp.2.t1,round(MVP_weight_ns,4)), row.names = F)
+colnames(mvp.2.t1)<-NULL
+
+kable(mvp.2.t1, "latex", booktabs = T, row.names = F) %>%
+kable_styling(latex_options = c("striped","hold_position","scale_down"))
+```
+
+```{r mvp.2.t2, echo=F}
+mvp.2.t2<-as.data.frame(t(data.frame(c('MVP mean', 0.11),c('MVP sd',0.104), 
+                                   c('VaR',4008 ),c('Expected shortfall', 5260 ),
+                                   c('Sharpe ratio',0.99))), row.names = F)
+colnames(mvp.2.t2)<-NULL
+kable(mvp.2.t2, "latex", booktabs = T, row.names = F) %>%
+kable_styling(latex_options = c("striped","hold_position"),position = "float_right")
+```
+
+After adding the restriction of not allowing short sale, now our MVP portfolio only includes 11 assets, and the rest 4 assets (BAC, MA, MSFT, AMZN) have weights equal 0. When short sales are not allowed, the mean of the MVP is 0.11, standard deviation is 0.104, 5% VaR is 4008, expected shortfall is 5260 and Sharpe ratio is 0.99.  Comparing with the 15 assets, although the mean value of MVP is not the highest, the Sharpe ratio of MVP is the highest. Here the MVP has the lowest standard deviation, lowest VaR and lowest expected shortfall. We can see that the portfolio also diversifies the overall risk. However, comparing with the condition that short sales are allowed, the standard deviation of MVP with forbidden short sales is higher, which means the risk is less diversified. 
+
+* Tangency Portfolio
+
+```{r t.2.t1, echo=F}
+t.2.t1<-names(MR)
+t.2.t1<-as.data.frame(rbind(t.2.t1,round(tangent_weight_ns,4)))
+colnames(t.2.t1)<-NULL
+
+kable(t.2.t1, "latex", booktabs = T, row.names = F) %>%
+kable_styling(latex_options = c("striped","hold_position","scale_down"))
+```
+
+```{r t.2.t2, echo=F}
+t.2.t2<-as.data.frame(t(data.frame(c('Tangency mean', 0.273),
+             c('Tangency  sd',0.141), c('VaR',4407 ),c('Expected shortfall', 6104 ),c('Sharpe ratio',1.89))), row.names = F)
+colnames(t.2.t2)<-NULL
+kable(t.2.t2, "latex", booktabs = T, row.names = F) %>%
+kable_styling(latex_options = c("striped","hold_position"),position="float_right")
+```
+
+After adding the restriction of not allowing short sale, now our tangency portfolio only includes 7 assets (JPM, V, MA, MSFT, FB, ADBE, VZ ), and the rest 8 assets have weights equal 0. The mean of the Tangency portfolio is 0.273, standard deviation is 0.141, 5% VaR is 4407, expected shortfall is 6104 and Sharpe ratio is 1.89. Among the 15 assets, AAPL has the highest Sharpe ratio, which equals 0.2967. Comparing with the 15 assets, the Sharpe ratio of the tangency portfolio is much higher. The tangency portfolio also has the lowest VaR and lowest expected shortfall, comparing  with the 15 individual assets. Comparing with the condition that short sales are allowed, the standard deviation of Tangency portfolio with forbidden short sales is higher, and the Sarpe ratio is lower, which means the current portfolio is less efficient. 
+
+## Asset Allocation
+
+In this asset allocation part, suppose there are no short sales allowed and we have an initial investment of $100,000. First, we use only the risky assets to construct an efficient portfolio, aiming to achieve a target expected return of 6% per year. We calculate the monthly risk, monthly 5% value-at-risk and expected shortfall on this efficient portfolio.
+
+Then we repeat the same procedures of calculation on the combination of T-Bills and the tangency portfolio. We want to see the allocation of investment to the assets and the risk-free asset. 
+
+* Only include risky assets (no T-bills)
+
+In the case when there are no T-Bills included, we only use the risky assets to construct our portfolio. We want to achieve an expected return of 6% per year, (or 0.5% per month). 
+
+There are only 8 assets(V, WFC, HSBC, FB, AAPL, IBM, ORCL, VZ) included in the efficient portfolio when there are no T-Bills. With respect to the investment, 13.19% should be allocated to V, 4.42% to WFC, 22.67% to HSBC, 0.03% to FB, 2.9% to AAPL, 13.03% to IBM, 7.42% to ORCL and 36.25% to VZ. The monthly risk of this portfolio is 0.0309, 5% VaR is 4579 and expected shortfall is 5869. 
+
+* Include risky assets and risk-free assets (T-Bills)
+
+Here we have both risk assets and the risk-free assets in the portfolio to achieve the target expected 6% annually return. 
+By calculation, we should invest 80.2% of our investment to the risk-free asset, which is the T-Bill in our portfolio. The rest of 19.8% investment should be put in the risky assets. There are 7 risky assets included, which are JPM, V, MA, MSFT, FB, ADBE and  VZ. 1.28% of the money should be invested to JPM, 3.33% to V, 2.71% to MA, 3.63% to MSFT, 2.2% to FB, 5.45% to ADBE and 1.2% to VZ. The monthly risk of this portfolio is 0.0084, 5% VaR is 823 and expected shortfall is 1159. We can see that the monthly risk of this portfolio is much lower than the one without risk-free asset, which means this portfolio diversifies the risk better than the previous one. The 5% VaR and expected shortfall of this portfolio are also lower than the one without including the risk-free asset. 
+
+
+```{r,echo=F}
+target<-0.005 #0.5% per month, 6% per year
+
+# No T-Bills
+mat_nt<-cbind(rep(1,15),mean_vect,diag(1,nrow=15))
+mup_nt<-seq(0.005,0.005,length=300)
+sdp_nt<-mup_nt
+weights_nt<-matrix(0,nrow=300,ncol=15)
+
+for (i in 1:length(mup_nt)){
+  bvec_nt<-c(1,mup_nt[i],rep(0.000000000001,15))
+  result_nt<-solve.QP(Dmat=cov_mat,dvec=rep(0,15),Amat=mat_nt,bvec=bvec_nt,meq=2)
+  sdp_nt[i]<-sqrt(result_nt$value)
+  weights_nt[i,]<-result_nt$solution
+}
+
+target_weight<-weights_nt[1,]
+#target_weight
+mean_nt<-target_weight %*% mean_vect
+mean_nt_ann<-mean_nt*12
+#mean_nt_ann
+
+sd_nt<-sqrt(t(as.matrix(target_weight))%*%cov_mat%*%as.matrix(target_weight))
+sd_nt_ann<-sd_nt*sqrt(12)
+#sd_nt_ann
+
+t_data<-rowSums(as.matrix(MR)%*%diag(target_weight))
+nonpara_VaR_nt<--quantile(t_data,0.05)*I
+nonpara_ES_nt<--sum(t_data*(t_data<quantile(t_data,0.05)))/sum(t_data<quantile(t_data,0.05))*I
+
+normal_VaR_nt<--I*(mean(t_data)+qnorm(0.05)*sd(t_data))
+normal_ES_nt<-I*(-mean(t_data)+sd(t_data)*dnorm(qnorm(0.05))/0.05)
+
+# using T-Bills, no short sales
+# wp*miup+(1-wp)*miufree=0.005
+# risky assets proportion
+wp_ns<-(0.005-mufree)/(mean_tangent_ns-mufree) 
+
+#round(wp_ns[1]*tangent_weight_ns*100,2)
+
+ # risk free proportion
+#round((1-wp_ns)*100,2)
+
+mean_t_ns<-(1-wp_ns)*mufree+wp_ns*mean_tangent_ns
+mean_t_ns_ann<-mean_t_ns*12
+
+sd_t_ns<-sqrt(wp_ns^2*sd_tangent_ns^2)
+sd_t_ns_ann<-sd_t_ns*sqrt(12)
+
+t_data_ns<-rowSums(as.matrix(MR)%*%diag(wp_ns[1]*tangent_weight_ns))+mufree*(1-wp_ns[1])
+nonpara_VaR_t_ns<--quantile(t_data_ns,0.05)*I
+nonpara_ES_t_ns<--sum(t_data_ns*(t_data_ns<quantile(t_data_ns,0.05)))/sum(t_data_ns<quantile(t_data_ns,0.05))*I
+
+normal_VaR_t_ns2<--I*(mean(t_data_ns)+qnorm(0.05)*sd(t_data_ns))
+normal_ES_t_ns2<-I*(-mean(t_data_ns)+sd(t_data_ns)*dnorm(qnorm(0.05))/0.05)
+
+# Sharpe ratio
+t_data_ns<-rowSums(as.matrix(MR)%*%diag(wp_ns[1]*tangent_weight_ns))+mufree*(1-wp_ns[1])
+sr_t_ns<-(mean(t_data_ns)*12-annulized_rf)/(sd(t_data_ns)*sqrt(12))
+
+sr_tangent_ns<-(mean_t_ns_ann-annulized_rf)/sd_t_ns_ann
+  # (mean(tangent_data_no)*12-rf)/(sd(tangent_data_no)*sqrt(12))
+```
+
+## Principal Component Analysis
+
+By computing the sample correlation matrix of the returns on our assets (**Appendix: Table 6**), we could find all the correlation relationships between each company. The more close to 1, means higher correlation. And the more close to 0, means lower correlation. The most highly correlated assets are JPM and BAC. The correlation between JPM and BAC is 0.84582. They are both best banks in America, and their business activities will interact with each other, so it is easy to understand that they are highly correlated. VZ and ADBE are two companies that are least correlated due to the fact that their correlation is only 0.0086. VZ and ADBE are two different companies that one is a mobile company and another is a computer software company, so they are not related with each other. By looking at the whole correlation matrix, we could see that most of the correlations are not high, they are around or lower than 0.5. So, we think diversification will help us reduce risk with these assets and if we can reduce some of highly correlated assets will reduce more risk. 
+
+```{r, echo=F}
+cormat <- round(cor(MR),2)
+melted_cormat <- melt(cormat)
+pca<-prcomp(cormat,scale=TRUE)
+```
+
+```{r PCA,echo=F,fig.height=3.5}
+result.pca<-summary(pca)
+result.pca<-as.data.frame(result.pca$importance[2:3,])
+g<-as.data.frame(t(result.pca[2,]))
+g$PC<-factor(names(result.pca[2,]), levels=names(result.pca[2,]))
+
+library(ggplot2)
+p1<-ggplot(g, aes(x=PC, y=g$`Cumulative Proportion`)) + 
+  geom_bar(stat = "identity")+labs(x="",y="")+ ggtitle("Cumulative Proportion of Variance") +
+  theme(plot.title = element_text(hjust=0.5)
+        ,axis.text.x = element_text(angle = 90, vjust = 1, size = 7, hjust = 1)) +
+  annotate(geom="text", label="85%", x=1.6, y=0.85, vjust=-0.5, col="red",size=3.4) +
+  geom_hline(yintercept = 0.85,col="red",linetype=1)
+
+res.PCA = PCA(MR, scale.unit=TRUE, ncp=4, graph=F)
+p2<-fviz_pca_var(res.PCA, arrowsize = 0.5, labelsize = 3, 
+             repel = TRUE, col.var = "contrib", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             title="        PCA graph of variables")+ theme(legend.position='bottom')
+p2$labels$colour<-'Contribution to variance'
+
+# multiplot(p1, p2, cols=2)
+grid.arrange(p1,p2, ncol=2, nrow=1, top = "")
+```
+
+After analyzing the correlation of assets, we consider using principal component analysis to reduce dimensions and to get the main combinations of our assets. Based on our analysis result,
+
+```{r t9, echo=F}
+kable(result.pca, "latex", booktabs = T) %>%
+kable_styling(latex_options = c("striped","scale_down","hold_position"))
+```
+
+we find the first principal component explains the most, and it explains 32.4% of the total variance. Till the 5th principal component, the cumulative variance can be explained is 84.96% and it is relatively high proportion, so we decide to keep first five principal components. We also obtain the factor loading for each of the five principal components (**Appendix: Table 8**), and based on the factor loadings, we could get the linear combination of our assets for each principal component.
+
+
+```{r Factor.Models,echo=F}
+ft4<-factanal(MR,factors=4,rotation="varimax")
+ft5<-factanal(MR,factors=5,rotation="varimax")
+
+ft4.load = ft4$loadings[1:15,]
+ft4.loading =as.data.frame(ft4.load)
+
+ft5.load = ft5$loadings[1:15,]
+ft5.loading =as.data.frame(ft5.load)
+```
+
+
+```{r, echo=F}
+row_1<-c("Number of Factors","Cumulative Var","P-value","Sufficient")
+row_2<-c(4,0.567,0.0412,"NO")
+row_3<-c(5,0.625,0.1320,"YES")
+
+ft<-data.frame(row_1=c("Number of Factors","Cumulative Var","P-value","Sufficient"),
+               row_2=c(4,0.567,0.0412,"NO"),
+               row_3=c(5,0.625,0.1320,"YES"))
+colnames(ft)<-NULL
+
+kable(ft, "latex", booktabs = T,row.names = F) %>%
+kable_styling(latex_options = c("striped","hold_position"),position="float_right")
+```
+
+Next, we run the factor analysis, which can help us explain returns with small number of factors.
+Based on the hypothesis test, we find when we use five factors, the p-value exceeds 0.05, which results in accepting H0 (five factors are sufficient). We also compute loadings of each factor attached in the **Appendix: Table 9**. Based on the loadings, although we do not know what does each factor represent, we could find a direction of each factor. Take factor 1 and factor 2 as examples, JPM and BAC have the highest loadings, so we could understand that factor 1 is an indicator that relative with bank area. For factor 2, AMZN and GOOGL have the highest loadings, which means factor 2 is an indicator that connect with rising technology industry.
+
+## Risk Management
+
+```{r normal,echo=F}
+A=100000
+# Normal Distribution
+VaR_asset_norm<-rep(0,15)
+ES_asset_norm<-rep(0.15)
+
+for (i in 1:15){
+  # VaR15[i]<--VaR(MR[,i],0.05,method="gaussian")*A
+  # ES15[i]<--ES(MR[,i],0.05,method="gaussian")*A
+  VaR_asset_norm[i]<--A*(mean(MR[,i])+qnorm(0.05)*sd(MR[,i]))
+  ES_asset_norm[i]<-A*((-mean(MR[,i])+sd(MR[,i])*dnorm(qnorm(0.05))/0.05))  
+}
+```
+
+```{r non.para,echo=F}
+# Nonparametric
+VaR_asset_non<-rep(0,15)
+ES_asset_non<-rep(0,15)
+
+for(i in 1:15){
+  VaR_asset_non[i]<--quantile(MR[,i],0.05)*A
+  ES_asset_non[i]<--sum(MR[,i]*(MR[,i]<quantile(MR[,i],0.05)))/sum(MR[,i]<quantile(MR[,i],0.05))*A
+}
+
+```
+
+```{r bootstrap, echo=F}
+## Bootstrap
+# MVP + Short Sales + Non-para
+iter<-10000
+VaR_MVP_1<-rep(0,iter)
+ES_MVP_1<-rep(0,iter)
+
+for (i in 1:iter){
+  data_1<-sample(MVP_data,length(MVP_data),replace = TRUE)
+  VaR_MVP_1[i]<--quantile(data_1,0.05)*I
+  ES_MVP_1[i]<--sum(data_1*(data_1<quantile(data_1,0.05)))/sum(data_1<quantile(data_1,0.05))*I
+}
+
+se_VaR_MVP_non<-sd(VaR_MVP_1)
+se_ES_MVP_non<-sd(ES_MVP_1, na.rm=T)
+
+CIU_VaR_MVP_non<-2*nonpara_VaR_MVP-quantile(VaR_MVP_1,0.025)
+CIL_VaR_MVP_non<-2*nonpara_VaR_MVP-quantile(VaR_MVP_1,0.975)
+
+CIU_ES_MVP_non<-2*nonpara_ES_MVP-quantile(ES_MVP_1,0.025,na.rm=TRUE)
+CIL_ES_MVP_non<-2*nonpara_ES_MVP-quantile(ES_MVP_1,0.975,na.rm=TRUE)
+
+# MVP + Short Sales + Normal
+VaR_MVP_2<-rep(0,iter)
+ES_MVP_2<-rep(0,iter)
+for (i in 1:iter){
+  data_2<-sample(MVP_data,length(MVP_data),replace = TRUE)
+  VaR_MVP_2[i]<--I*(mean(data_2)+qnorm(0.05)*sd(data_2))
+  ES_MVP_2[i]<-I*(-mean(data_2)+sd(data_2)*dnorm(qnorm(0.05))/0.05)
+}
+
+se_VaR_MVP_normal<-sd(VaR_MVP_2)
+se_ES_MVP_normal<-sd(ES_MVP_2, na.rm=T)
+
+CIU_VaR_MVP_normal<-2*normal_VaR_MVP-quantile(VaR_MVP_2,0.025)
+CIL_VaR_MVP_normal<-2*normal_VaR_MVP-quantile(VaR_MVP_2,0.975)
+CIU_ES_MVP_normal<-2*normal_ES_MVP-quantile(ES_MVP_2,0.025,na.rm=TRUE)
+CIL_ES_MVP_normal<-2*normal_ES_MVP-quantile(ES_MVP_2,0.975,na.rm=TRUE)
+
+#tangency+short sale+nonpara
+VaR_tangent_3<-rep(0,iter)
+ES_tangent_3<-rep(0,iter)
+for (i in 1:iter){
+  data_3<-sample(tangent_data,length(tangent_data),replace = TRUE)
+  VaR_tangent_3[i]<--quantile(data_3,0.05)*I
+  ES_tangent_3[i]<--sum(data_3*(data_3<quantile(data_3,0.05)))/sum(data_3<quantile(data_3,0.05))*I
+}
+
+se_VaR_tangent_non<-sd(VaR_tangent_3)
+se_ES_tangent_non<-sd(ES_tangent_3, na.rm=T)
+
+CIU_VaR_tangent_non<-2*nonpara_VaR_tangent-quantile(VaR_tangent_3,0.025)
+CIL_VaR_tangent_non<-2*nonpara_VaR_tangent-quantile(VaR_tangent_3,0.975)
+CIU_ES_tangent_non<-2*nonpara_ES_tangent-quantile(ES_tangent_3,0.025,na.rm=TRUE)
+CIL_ES_tangent_non<-2*nonpara_ES_tangent-quantile(ES_tangent_3,0.975,na.rm=TRUE)
+
+#tangency+short sale+normal
+VaR_tangent_4<-rep(0,iter)
+ES_tangent_4<-rep(0,iter)
+for (i in 1:iter){
+  data_4<-sample(tangent_data,length(tangent_data),replace = TRUE)
+  VaR_tangent_4[i]<--I*(mean(data_4)+qnorm(0.05)*sd(data_4))
+  ES_tangent_4[i]<-I*(-mean(data_4)+sd(data_4)*dnorm(qnorm(0.05))/0.05)
+}
+CIU_VaR_tangent_normal<-2*normal_VaR_tangent-quantile(VaR_tangent_4,0.025)
+CIL_VaR_tangent_normal<-2*normal_VaR_tangent-quantile(VaR_tangent_4,0.975)
+CIU_ES_tangent_normal<-2*normal_ES_tangent-quantile(ES_tangent_4,0.025,na.rm=TRUE)
+CIL_ES_tangent_normal<-2*normal_ES_tangent-quantile(ES_tangent_4,0.975,na.rm=TRUE)
+
+se_VaR_tangent_normal<-sd(VaR_tangent_4)
+se_ES_tangent_normal<-sd(ES_tangent_4, na.rm=T)
+
+#MVP+NS+NON
+VaR_MVP_ns_1<-rep(0,iter)
+ES_MVP_ns_1<-rep(0,iter)
+for (i in 1:iter){
+  data_ns_1<-sample(MVP_data_ns,length(MVP_data_ns),replace = TRUE)
+  VaR_MVP_ns_1[i]<--quantile(data_ns_1,0.05)*I
+  ES_MVP_ns_1[i]<--sum(data_ns_1*(data_ns_1<quantile(data_ns_1,0.05)))/sum(data_ns_1<quantile(data_ns_1,0.05))*I
+}
+
+se_VaR_MVP_ns_non<-sd(VaR_MVP_ns_1)
+se_ES_MVP_ns_non<-sd(ES_MVP_ns_1, na.rm=T)
+
+CIU_VaR_MVP_ns_non<-2*nonpara_VaR_MVP_ns-quantile(VaR_MVP_ns_1,0.025)
+CIL_VaR_MVP_ns_non<-2*nonpara_VaR_MVP_ns-quantile(VaR_MVP_ns_1,0.975)
+CIU_ES_MVP_ns_non<-2*nonpara_ES_MVP_ns-quantile(ES_MVP_ns_1,0.025,na.rm=TRUE)
+CIL_ES_MVP_ns_non<-2*nonpara_ES_MVP_ns-quantile(ES_MVP_ns_1,0.975,na.rm=TRUE)
+
+#MVP+NS+NORM
+VaR_MVP_ns_2<-rep(0,iter)
+ES_MVP_ns_2<-rep(0,iter)
+for (i in 1:iter){
+  data_ns_2<-sample(MVP_data_ns,length(MVP_data_ns),replace = TRUE)
+  VaR_MVP_ns_2[i]<--I*(mean(data_ns_2)+qnorm(0.05)*sd(data_ns_2))
+  ES_MVP_ns_2[i]<-I*(-mean(data_ns_2)+sd(data_ns_2)*dnorm(qnorm(0.05))/0.05)
+}
+
+se_VaR_MVP_ns_normal<-sd(VaR_MVP_ns_2)
+se_ES_MVP_ns_normal<-sd(ES_MVP_ns_2, na.rm=T)
+
+CIU_VaR_MVP_ns_normal<-2*normal_VaR_MVP_ns-quantile(VaR_MVP_ns_2,0.025)
+CIL_VaR_MVP_ns_normal<-2*normal_VaR_MVP_ns-quantile(VaR_MVP_ns_2,0.975)
+CIU_ES_MVP_ns_normal<-2*normal_ES_MVP_ns-quantile(ES_MVP_ns_2,0.025,na.rm=TRUE)
+CIL_ES_MVP_ns_normal<-2*normal_ES_MVP_ns-quantile(ES_MVP_ns_2,0.975,na.rm=TRUE)
+
+#tangent+ns+non
+VaR_tangent_ns_3<-rep(0,iter)
+ES_tangent_ns_3<-rep(0,iter)
+for (i in 1:iter){
+  data_ns_3<-sample(tangent_data_ns,length(tangent_data_ns),replace = TRUE)
+  VaR_tangent_ns_3[i]<--quantile(data_ns_3,0.05)*I
+  ES_tangent_ns_3[i]<--sum(data_ns_3*(data_ns_3<quantile(data_ns_3,0.05)))/sum(data_ns_3<quantile(data_ns_3,0.05))*I
+}
+
+se_VaR_tangent_ns_non<-sd(VaR_tangent_ns_3)
+se_ES_tangent_ns_non<-sd(ES_tangent_ns_3, na.rm=T)
+
+CIU_VaR_tangent_ns_non<-2*nonpara_VaR_tangent_ns-quantile(VaR_tangent_ns_3,0.025)
+CIL_VaR_tangent_ns_non<-2*nonpara_VaR_tangent_ns-quantile(VaR_tangent_ns_3,0.975)
+CIU_ES_tangent_ns_non<-2*nonpara_ES_tangent_ns-quantile(ES_tangent_ns_3,0.025,na.rm=TRUE)
+CIL_ES_tangent_ns_non<-2*nonpara_ES_tangent_ns-quantile(ES_tangent_ns_3,0.975,na.rm=TRUE)
+
+#tangent+ns+norm
+VaR_tangent_ns_4<-rep(0,iter)
+ES_tangent_ns_4<-rep(0,iter)
+for (i in 1:iter){
+  data_ns_4<-sample(tangent_data_ns,length(tangent_data_ns),replace = TRUE)
+  VaR_tangent_ns_4[i]<--I*(mean(data_ns_4)+qnorm(0.05)*sd(data_ns_4))
+  ES_tangent_ns_4[i]<-I*(-mean(data_ns_4)+sd(data_ns_4)*dnorm(qnorm(0.05))/0.05)
+}
+
+se_VaR_tangent_ns_normal<-sd(VaR_tangent_ns_4)
+se_ES_tangent_ns_normal<-sd(ES_tangent_ns_4, na.rm=T)
+
+CIU_VaR_tangent_ns_normal<-2*normal_VaR_tangent_ns-quantile(VaR_tangent_ns_4,0.025)
+CIL_VaR_tangent_ns_normal<-2*normal_VaR_tangent_ns-quantile(VaR_tangent_ns_4,0.975)
+
+CIU_ES_tangent_ns_normal<-2*normal_ES_tangent_ns-quantile(ES_tangent_ns_4,0.025,na.rm=TRUE)
+CIL_ES_tangent_ns_normal<-2*normal_ES_tangent_ns-quantile(ES_tangent_ns_4,0.975,na.rm=TRUE)
+
+```
+
+```{r CI.assets, echo=F}
+#CI for assets
+#nonpara
+sample_non<-rep(0,nrow(MR))
+data_non<-matrix(0,ncol=15,nrow=nrow(MR))
+VaR_asset_non_b<-matrix(0,ncol=15,nrow=iter)
+ES_asset_non_b<-matrix(0,ncol=15,nrow=iter)
+
+for ( i in 1:iter){
+  for(j in 1:15){
+    sample_non<-sample(MR[,j],size=NROW(MR),replace=TRUE)
+    data_non[,j]<-sample_non
+    VaR_asset_non_b[i,j]<--quantile(sample_non,0.05)*I
+    ES_asset_non_b[i,j]<--sum(sample_non*(sample_non<quantile(sample_non,0.05)))/sum(sample_non<quantile(sample_non,0.05))*I
+  }
+  
+}
+
+SE_VaR_non<-apply(VaR_asset_non_b,2,sd)
+SE_ES_non<-apply(ES_asset_non_b,2,sd, na.rm=T)
+
+
+CIU_VaR_non<-2*VaR_asset_non-apply(VaR_asset_non_b,2,quantile,0.025)
+CIL_VaR_non<-2*VaR_asset_non-apply(VaR_asset_non_b,2,quantile,0.975)
+
+CIU_ES_non<-2*ES_asset_non-apply(ES_asset_non_b,2,quantile,0.025,na.rm=TRUE)
+CIL_ES_non<-2*ES_asset_non-apply(ES_asset_non_b,2,quantile,0.975,na.rm=TRUE)
+
+
+#normal
+sample_norm<-rep(0,nrow(MR))
+data_norm<-matrix(0,ncol=15,nrow=nrow(MR))
+VaR_asset_norm_b<-matrix(0,ncol=15,nrow=iter)
+ES_asset_norm_b<-matrix(0,ncol=15,nrow=iter)
+
+for ( i in 1:iter){
+  for(j in 1:15){
+    sample_norm<-sample(MR[,j],size=NROW(MR),replace=TRUE)
+    data_norm[,j]<-sample_norm
+    VaR_asset_norm_b[i,j]<--(mean(data_norm)+qnorm(0.05)*sd(data_norm))*I
+    ES_asset_norm_b[i,j]<-(-mean(data_norm)+sd(data_norm)*dnorm(qnorm(0.05))/0.05)*I
+  }
+  
+}
+
+SE_VaR_norm<-apply(VaR_asset_norm_b,2,sd)
+SE_ES_norm<-apply(ES_asset_norm_b,2,sd,na.rm=T)
+
+CIU_VaR_norm<-2*VaR_asset_norm-apply(VaR_asset_norm_b,2,quantile,0.025)
+CIL_VaR_norm<-2*VaR_asset_norm-apply(VaR_asset_norm_b,2,quantile,0.975)
+
+CIU_ES_norm<-2*ES_asset_norm-apply(ES_asset_norm_b,2,quantile,0.025,na.rm=TRUE)
+CIL_ES_norm<-2*ES_asset_norm-apply(ES_asset_norm_b,2,quantile,0.975,na.rm=TRUE)
+```
+
+Risk management is an important part of a daily financial activity. Value-at-Risk (VaR) and expected shortfall (ES) are two indicators used in risk management. VaR measures the potential loss in value of a risky asset or portfolio over a defined period for a given confidence interval. ES is a conditional expectation of loss given loss is larger than VaR.
+
+We estimate 5% VaR and ES on $100,000 investment over one month investment horizon for each asset and portfolio based on normal distribution first. Then, we conclude that for assets, FB has the highest VaR (12444) and ES (16307), and V has the lowest VaR (5467) and ES (7368). For portfolios, tangency portfolio without short sale has the highest VaR (4407) and has the highest ES (6104). MVP with short sale has both lowest VaR (3994) and ES (5172).
+
+We repeat the above step based on nonparametric method. We find BAC has the highest VaR (11899) and AAPL has highest ES (14278). Same as before, V has the lowest VaR (5941) and ES (6704). For portfolios, tangency portfolio without short sale has the highest VaR (4706) and tangency portfolio with short sale has highest ES (6423). While, tangency portfolio with short sale has lowest VaR (3457). Moreover, MVP without short sale has lowest ES (5622).
+
+The results for above are attached in **Appendix: Table 10, Table 11**.
+
+Next, we use bootstrap method to simulate the standard errors and 95% confidence intervals of VaR and ES for 15 assets and different portfolios based on normal method and nonparametric method. All bootstrap results are in **Appendix: Table 12, Table 13, Table 14**.
+
+## Copulas
+
+```{r,echo=F,message=F,warning=F}
+# Gaussian
+cop.norm = normalCopula(dim=15)
+fit.copnorm = fitCopula(cop.norm,pobs(MR),method="ml")
+
+# t
+cop.t = tCopula(dim=15)
+fit.copt = fitCopula(cop.t,pobs(MR),method = "ml")
+
+# clayton
+cop.clayton = claytonCopula(dim=15)
+fit.copclayton = fitCopula(cop.clayton,pobs(MR),method = "ml")
+
+# gumbel
+cop.gumbel = gumbelCopula(dim=15)
+fit.copgumbel = fitCopula(cop.gumbel,pobs(MR),method = "ml")
+
+AIC<-AIC(fit.copnorm,fit.copt,fit.copclayton,fit.copgumbel)
+BIC<-BIC(fit.copnorm,fit.copt,fit.copclayton,fit.copgumbel)
+```
+
+```{r, echo=F}
+df<-data.frame(DF=AIC$df,AIC=AIC$AIC,BIC=BIC$BIC)
+rownames(df)<-c("Gaussian","t","clayton", "gumbel")
+kable(df, "latex", booktabs = T) %>%
+kable_styling(latex_options = c("striped","hold_position"),position = "float_right")
+```
+
+We use different copulas to fit the joint distribution of our returns. By computing AICs and BICs for Gaussian copula, t copula, Clayton copula and Gumbel copula, we find t copula has the lowest AIC and BIC, which means t copula fits best among those copulas. The t copula is a dependence structure of the multivariate t distribution, and it is better to capture extreme values situation. Also, by doing research, we find that the t copula is often observed in financial return data. In the t copula, it has the same upper and lower tail dependence, which means our joint distribution has this property. Furthermore,  this fit result shows that the t copula is an appropriate distribution for returns’ joint distribution and matches with the finding of the t copula.
+
+# Part V: Conclusion 
+
+The Data Description part analyze 15 assets from different perspectives, and we mainly focus on EDA for our data. Methods include sample statistics, the plots of monthly prices and returns compared to SP500, outlier check, Equity curve for 15 assets compared to SP500, histogram, qq-plots, tests for stationarity, fitting distributions, correlation and covariance matrix. Each method indicates one characteristic of the assets. The overall result shows that our assets are stationable, and only GOOGL , AMZN, FB, those big companies may have some extreme values based on some news. 
+
+When constructing the portfolios, we find that the minimum variance portfolio with allowed short sales has the lowest standard deviation, which implies that it has the lowest risk. The tangency portfolio with allowed short sales has the highest Sharpe ratio. When short sales are not allowed, the portfolios become less effective. If we want to achieve the expected target return of 6% per year, the best way of asset allocation for diversifying the risk is to invest 80.2% of money to the risk-free asset, and the rest to the risky assets, since the monthly risk is the lowest under this circumstance. 
+
+After construct portfolio with all assets, we want to use principal component analysis to reduce the dimension of factors. We run the PCA test and find when we keep 5 principal components, 85% of variance can be explained. Also, in factor analysis we find 5 factors are sufficient.
+
+In order to manage risks for 15 assets and portfolios, we compute VaR and ES for them. By studying their VaRs and ESs, we could have a brief understanding of risk. Since confidence interval could provide a reference area for investors, we use bootstrap method to find the 95% confidence intervals of VaR and ES for assets and portfolios.
+
+In the last part, we use different copulas to fit the joint distribution of returns and find T Copula fits best. 
+
+After doing all the analysis above, we have a better understanding of our assets, also, we have utilized what we have learnt in financial statistical methods to this project. 
+
+# Part VI: Appendix
+
+The following shows the tables and figues we mentioned before:
+
+```{r t1, echo=F}
+cn<-c("JPMorgan Chase & Co.","Visa Inc.","Bank of America Corporation","Mastercard Incorporated","Wells Fargo & Company","HSBC Holdings plc","Microsoft Corporation","Alphabet Inc.","Facebook Inc.","Apple Inc.","Amazon.com, Inc.","International Business Machines Corporation","Oracle Corporation","Adobe Inc.","Verizon Communications Inc.")
+tb1<-data.frame(Assets=names(MR),"Company Names"=cn)
+kable(tb1, "latex", booktabs = T, caption = "Data Description") %>%
+kable_styling(latex_options = c("striped","hold_position"))
+```
+
+```{r t2, echo=F}
+dat<-data.frame(avg,sd,S,K,beta, "Sharpe Ratio"=sharpe.ratio, "Annual Average"=annual.avg,"Annual SD"=annual.sd)
+kable(dat, "latex", booktabs = T, caption = "Sample Statistics") %>%
+kable_styling(latex_options = c("striped","hold_position"))
+```
+
+```{r f1, echo=F, fig.align='center'}
+# Monthly Prices
+plot(CP[,17], type="l",lwd=3, col="black",ylim=c(0,4000),
+     main="Figure 1: Monthly Closing Price for 15 Assets",ylab="Price",xlab="Time Series", cex.main=0.8)
+legend(x=22,y=4120,legend="SP500",lty=1, cex=0.6,lwd=3, col="black")
+
+for (i in 2: 8){
+  lines(CP[,i], col=i,lty=2)
+  legend("topleft",legend=names(MR[1:7]),lty=2, cex=0.6, col=c(2:8))
+}
+
+for (i in 9:15){
+    lines(CP[,i], col=i, lty=1)
+    legend(x=9,y=4150,legend=names(MR[8:14]),lty=1, cex=0.6, col=c(9:15))
+}
+    lines(CP[,16], col="black", lty=4)
+    legend(x=-2,y=2700,legend=names(MR[15]),lty=4, cex=0.6, col="black")
+```
+
+```{r f2,echo=F, fig.weight=5,fig.height=8}
+# Returns vs.SP500
+# Monthly Net Return Plots for 15 Assets with S&P500
+#bottom, left, top and right
+par(mfrow=c(5,3), mar=c(2,2,2,2))
+
+for (i in 1: 15){
+  plot(SP500, type="l", col="black",ylab="Price",ylim=c(-0.24,0.48), main=names(MR[i]), lwd=1,cex.main=0.5)
+  lines(MR[,i], col="blue")
+  legend("topleft",legend=c(names(MR[i]),"SP500"),col=c("blue", "black"), cex=1,lty=1)
+}
+mtext("Figure 2: Monthly Net Return Plots for 15 Assets with S&P500", side = 3, line =-0.8, outer = T,cex = 0.7)
+```
+
+```{r t3, echo=F}
+O<-c('-0.1310323,-0.1220433','N/A','0.2800001','-0.1120345','-0.1283465 , 0.1501848, -0.1120401, -0.1027221, -0.1510685','0.1652970 ,0.1358779','0.15693802, -0.13024755,  0.19626166 , 0.18933577 ,-0.0970','0.1765820 ,0.2175025 ,0.1551138','0.4790997, 0.2715692','-0.1840446','0.2351126 , 0.2406390, -0.2021917','0.1558422 ,-0.2366246 , 0.1825460','N/A','N/A','-0.1170704','-0.06258082 , 0.08298312 ,-0.06940336, -0.09177689 , 0.07868440, -0.06577773')
+nn<-c(names(MR),"SP500")
+dfff<-data.frame(names=nn,"Outliers"=O)
+kable(dfff, "latex", booktabs = T, caption="Outlier Check Summary") %>%
+kable_styling(latex_options = c("striped","hold_position"))
+```
+
+```{r f3, echo=F}
+EquityCurve<-cumprod(1+MR)
+EquityCurve.SP500<-cumprod(1+SP500)
+
+plot(EquityCurve.SP500, type="l",lwd=3, col="black",ylim=c(0,9),
+     main="Figure 3: Equity curve for each asset",ylab="Price",xlab="Time Series",cex.main=0.8)
+legend(x=24,y=9.34,legend="SP500",lty=1, cex=0.6,lwd=3, col="black")
+
+for (i in 1: 8){
+  lines(EquityCurve[,i], col=i,lty=2)
+  legend("topleft",legend=names(MR[1:8]),lty=2, cex=0.6, col=c(1:8))
+}
+
+for (i in 9:15){
+    lines(EquityCurve[,i], col=i, lty=1)
+    legend(x=11.6,y=9.34,legend=names(MR[9:15]),lty=1, cex=0.6, col=c(9:15))
+}
+```
+
+```{r f4, echo=F, fig.weight=5,fig.height=7.5}
+par(mfrow=c(5,3), mar=rep(3,4))
+for (i in 1:15){hist(MR[,i], ylab="", xlab="", main=names(MR)[i],cex.main=0.5)}
+mtext("Figure 4: Histograms for 15 assets", side = 3, line =-1, outer = T,cex = 0.7)
+```
+
+```{r f5, echo=F}
+par(mfrow=c(1,1))
+boxplot(MR.Returns[,-1],las = 2, main="Figure 5: Boxplots for 15 assets", ylim=c(-0.5,0.5))
+```
+
+```{r f6, echo=F, fig.weight=5,fig.height=7.5}
+par(mfrow=c(5,3), mar=c(2,2,2,2))
+for (i in 1:15){
+  # qqnorm(MR[,i], ylab="", xlab="", main=names(MR)[i])
+  qqnormPlot(MR[,i],title=FALSE, cex.main=0.5)
+  title(main=names(MR)[i],ylab=NULL)
+  # qqline(MR[,i], col="red")
+}
+mtext("Figure 6: QQ Plots for 15 assets", side = 3, line =-1, outer = T,cex = 0.8)
+```
+
+```{r t4, echo=F, warning=F, message=F}
+Result<-c()
+p.value<-c()
+for (i in 1:15){
+ adf_test<- adf.test(MR[,i],alternative = 'stationary')
+ p.value<-c(p.value,adf_test$p.value)
+if(isTRUE(adf_test$p.value<0.05)==TRUE) 
+  Result<-c(Result,paste(names(MR[i]),"\ is Stationary", sep = ""))
+}
+tb<-data.frame(P.value=p.value,Result)
+kable(tb, "latex", booktabs = T, caption="Stationary Test Result") %>%
+kable_styling(latex_options = c("striped","hold_position"))
+```
+
+```{r t5, echo=F, warning=F}
+Choice<-c("Normal","Normal","Normal","Normal","T","Normal","T","T","Skewed T","Normal","Normal","T","Normal","Normal","Normal")
+a<-data.frame(names=names(MR),AIC_t,AIC_standard.t,AIC_sstd,AIC_n, Choice)
+kable(a, "latex", booktabs = T,caption = "Fit Distribution Result" ) %>%
+kable_styling(latex_options = c("striped","hold_position"))
+```
+
+
+\newpage
+.
+
+
+```{r f7,echo=F,message=F, warning=F, fig.align='center'}
+pairs(MR,cex=0.05, main="Figure 7: Pairwise Scatter plots", cex.main=0.5)
+```
+
+```{r t6, echo=F}
+cor<-as.data.frame(round(cor(MR),3))
+kable(cor, "latex", booktabs = T, caption="Correation Matrix") %>%
+kable_styling(latex_options = c("striped","hold_position","scale_down"))
+```
+
+```{r t7,echo=F,message=F, warning=F}
+cov<-as.data.frame(round(cov(MR),3))
+kable(cov, "latex", booktabs = T, caption = "Sample Covariance Matrix") %>%
+kable_styling(latex_options = c("striped","hold_position","scale_down"))
+```
+
+```{r f8,echo=F}
+plot(sdp,mup,typ='l',xlim =c(0, 0.2),ylim=c(-0.05, 0.1),
+     lty=3,lwd=2,main="Figure 8: Portfolios (Short Sales Allowed)",
+     ylab=expression(mu), xlab=expression(sigma))
+points(0,mufree,cex=1,pch="*")
+text(0,mufree,sprintf("(%.2f,%.2f)",0,annulized_rf),cex=0.8,pos=4)
+
+lines(c(0,2),mufree+c(0,2)*(mup[ind]-mufree)/sdp[ind],lwd=1,lty=1,col="blue")
+points(sdp[ind],mup[ind],cex=1,pch="T")
+text(sdp[ind],mup[ind],sprintf("(%.2f,%.2f)",sdp[ind],mup[ind]),cex=0.8,pos=4)
+points(sdp[ind2],mup[ind2],cex=1,pch="+")
+text(sdp[ind2],mup[ind2],sprintf("(%.2f,%.2f)",sdp[ind2],mup[ind2]),cex=0.8,pos=4)
+lines(sdp[ind3],mup[ind3],type='l',xlim=c(0,.25),ylim=c(0,.3),lwd=1,col='red')
+
+
+legend("bottomright",
+       c("Rist-free asset","Tengency portfolio","MVP",
+         "Efficient portfolio","Efficient frontier"),
+       lty=c(NA,NA,NA,1,1),
+       col=c("black","black","black","blue","red"),
+       pch=c("*","T","+","",""),
+       pt.cex = c(1,1,1,1,1))
+```
+
+```{r f9,echo=F}
+plot(sdp_ns,mup_ns,typ='l',xlim =c(0, 0.2),ylim=c(-0.05, 0.1),lty=3,lwd=2,
+     main="Figure 9: Portfolios (Short Sales Not Allowed)",
+     ylab=expression(mu), xlab=expression(sigma))
+points(0,mufree,cex=1,pch="*")
+text(0,mufree,sprintf("(%.2f,%.2f)",0,annulized_rf),cex=0.8,pos=4)
+lines(c(0,2),mufree+c(0,2)*(mup_ns[ind_ns]-mufree)/sdp_ns[ind_ns],lwd=1,lty=1,col="blue")
+points(sdp_ns[ind_ns],mup_ns[ind_ns],cex=1,pch="T")
+text(sdp_ns[ind_ns],mup_ns[ind_ns],sprintf("(%.2f,%.2f)",sdp_ns[ind_ns],mup_ns[ind_ns]),cex=0.8,pos=4)
+points(sdp_ns[ind2_ns],mup_ns[ind2_ns],cex=1,pch="+")
+text(sdp_ns[ind2_ns],mup_ns[ind2_ns],sprintf("(%.2f,%.2f)",sdp_ns[ind2_ns],mup_ns[ind2_ns]),cex=0.8,pos=4)
+lines(sdp_ns[ind3_ns],mup_ns[ind3_ns],type='l',xlim=c(0,.25),ylim=c(0,.3),lwd=1,col='red')
+
+legend("bottomright",
+       c("Rist-free asset","Tengency portfolio","MVP",
+         "Efficient portfolio","Efficient frontier"),
+       lty=c(NA,NA,NA,1,1),
+       col=c("black","black","black","blue","red"),
+       pch=c("*","T","+","",""),
+       pt.cex = c(1,1,1,1,1))
+```
+
+```{r f10, echo=F, eval=F}
+# Get lower, upper triangle of the correlation matrix
+get_lower_tri<-function(cormat){cormat[upper.tri(cormat)] <- NA
+    return(cormat)}
+get_upper_tri <- function(cormat){cormat[lower.tri(cormat)]<- NA
+    return(cormat)}
+
+# Use correlation between variables as distance
+reorder_cormat <- function(cormat){
+  dd <- as.dist((1-cormat)/2)
+  hc <- hclust(dd)
+  cormat <-cormat[hc$order, hc$order]}
+
+# Melt the correlation matrix
+upper_tri <- get_upper_tri(cormat)
+melted_cormat <- melt(upper_tri, na.rm = TRUE)
+cormat <- reorder_cormat(cormat)
+
+ggheatmap <- ggplot(melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+    name="Correlation") +
+  theme_minimal()+ # minimal theme
+ theme(axis.text.x = element_text(angle = 90, vjust = 1, 
+    size = 12, hjust = 1))+ labs(x="",y="")+
+ coord_fixed()
+
+ggheatmap
+```
+
+```{r t8,echo=F}
+## PCA
+pc<-as.data.frame(pca$rotation[,1:5])
+kable(pc, "latex", booktabs = T, caption = "Principal Components Loadings",row.names = T) %>%
+kable_styling(latex_options = c("striped","hold_position"))
+```
+
+```{r, echo=F}
+kable(ft5.loading, "latex", booktabs = T, caption="Factor Loadings") %>%
+kable_styling(latex_options = c("striped","hold_position"))
+```
+
+```{r rm, echo=F}
+# Normal
+# VaR_asset_norm[which.max(VaR_asset_norm)]
+# which.max(VaR_asset_norm)
+# ES_asset_norm[which.max(ES_asset_norm)]
+# which.max(ES_asset_norm)
+# 
+# VaR_asset_norm[which.min(VaR_asset_norm)]
+# which.min(VaR_asset_norm)
+# ES_asset_norm[which.min(ES_asset_norm)]
+# which.min(ES_asset_norm)
+
+# Non-para
+# VaR_asset_non[which.max(VaR_asset_non)]
+# which.max(VaR_asset_non)
+# ES_asset_non[which.max(ES_asset_non)]
+# which.max(ES_asset_non)
+# 
+# VaR_asset_non[which.min(VaR_asset_non)]
+# which.min(VaR_asset_non)
+# ES_asset_non[which.min(ES_asset_non)]
+# which.min(ES_asset_non)
+normal.nonpara.a<-data.frame(Assets=names(MR),VaR=VaR_asset_norm,ES=ES_asset_norm,VaR_asset_non, ES_asset_non)
+colnames(normal.nonpara.a)<-c("Assets","VaR under Normal","ES under Normal","VaR under Nonparametric","ES under Nonparametric")      
+
+kable(normal.nonpara.a, "latex", booktabs = T, caption="VaR and ES for Assets") %>%
+kable_styling(latex_options = c("striped","hold_position"))
+```
+
+```{r ppt,echo=F}
+ppt<-data.frame(rbind(
+  c("VaR under Normal","ES under Normal","VaR under Nonparametric","ES under Nonparametric"),
+  c(3994,5172,4569,5843),
+  c(4043,5781,3457,6423),
+  c(4008,5260,3557,5622),
+  c(4407,6104,4706,6194)
+))
+colnames(ppt)<-NULL
+rownames(ppt)<-c("Portfolios","MVP+Short Sale","Tangency+Short Sale","MVP+No Short Sale","Tangency+No Short Sale")
+
+kable(ppt, "latex", booktabs = T, caption="VaR and ES for Portfolios") %>%
+kable_styling(latex_options = c("striped","hold_position","scale_down"))
+```
+
+```{r norm.CI,echo=F}
+CI.var<-c()
+CI.ES<-c()
+for (i in 1:15){
+CI.var<-c(CI.var,paste("[",round(CIL_VaR_norm[i]),",",round(CIU_VaR_norm[i]),"]", sep=""))
+CI.ES<-c(CI.ES,paste("[",round(CIL_ES_norm[i]),",",round(CIU_ES_norm[i]),"]", sep=""))
+}
+CI.norm<-data.frame(names(MR),SE_VaR_norm,SE_ES_norm,CI.var,CI.ES)
+colnames(CI.norm)<-c("Assets","SE of VaR","SE of ES","CI of VaR","CI of ES")
+
+kable(CI.norm, "latex", booktabs = T,caption = "Assets SE and CIs under Normal Bootstraping") %>%
+kable_styling(latex_options = c("striped","hold_position"))
+```
+
+
+```{r nonparametirc.CI,echo=F}
+ci.var<-c()
+ci.ES<-c()
+for (i in 1:15){
+ci.var<-c(ci.var,paste("[",round(CIL_VaR_non[i]),",",round(CIU_VaR_non[i]),"]", sep=""))
+ci.ES<-c(ci.ES,paste("[",round(CIL_ES_non[i]),",",round(CIU_ES_non[i]),"]", sep=""))
+}
+ci.non<-data.frame(names(MR),SE_VaR_non,SE_ES_non,ci.var,ci.ES)
+colnames(ci.non)<-c("Assets","SE of VaR","SE of ES","CI of VaR","CI of ES")
+
+kable(ci.non, "latex", booktabs = T,caption = "Assets SE and CIs under Nonparametric Bootstraping") %>%
+kable_styling(latex_options = c("striped","hold_position"))
+```
+
+
+```{r rm2, echo=F}
+pp<-data.frame(
+c("SE of VaR",558,975,810,1808,558,1061,711,923),
+c("SE of ES",639,786,964,1642,638,882,815,985),
+c("CI of VaR",'[2986,5086]','[2901,6705]','[2534,5652]','[-1284,5300]','[2986,5166]','[1000,4211]','[3067,5871]','[2394,6820]'),
+c("CI of ES",'[4017,6436]','[4626,7674]','[4034,7673]','[4076,9781]','[4085,6597]','[4207,7486]','[4572,7786]','[4378,8123]')
+)
+
+colnames(pp)<-NULL
+rownames(pp)<-c("Portfolios","MVP+Normal+Short sale","MVP+Nonparametric+Short sale","Tangency+Normal+Short sale","Tangency+Nonparametric+Short sale","MVP+Normal+No Short sale","MVP+Nonparametric+No Short sale","Tangency+Normal+No Short sale","Tangency+Nonparametric+No Short sale")
+
+kable(pp, "latex", booktabs = T,caption = "Portfolios SE and CIs under Normal and Nonparametric Bootstraping") %>%
+kable_styling(latex_options = c("striped","hold_position"))
+```
