@@ -26,11 +26,12 @@ proj/
 ## Documents
 * [Data Sources](data/Data_Sources.zip)
 * Data
-	+ [Close Price](data/Close_Price.csv)
+  + [Close Price](data/Close_Price.csv)
   + [Monthly Return](data/Monthly_Return.csv)
   + [Risk Free](data/Risk_Free.csv)
 
-* [Code](doc/Group5_Final_Project.Rmd)
+* Code
+  + [R](doc/Group5_Final_Project.Rmd)
 
 ## Reports
 * [PDF Version](doc/Group5_Final_Project.pdf)
