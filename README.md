@@ -4,9 +4,10 @@ This is the final project for Statistical Methods in Finance.
 **Term**: Fall 2019
 
 **Group 5** 
-	+ Chen Chen cc4291@columbia.edu
-	+ Yufan Zhang yz3385@columbia.edu
-	+ Qiwen Gao qg2165@columbia.edu
+
+* Chen Chen cc4291@columbia.edu
+* Yufan Zhang yz3385@columbia.edu
+* Qiwen Gao qg2165@columbia.edu
 
 Following [suggestions](http://nicercode.github.io/blog/2013-04-05-projects/) by [RICH FITZJOHN](http://nicercode.github.io/about/#Team) (@richfitz). This folder is orgarnized as follows.
 
